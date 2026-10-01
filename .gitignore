@@ -1,0 +1,6 @@
+target/
+*.log
+*.class
+.vscode/
+.antigravity/
+.DS_Store
