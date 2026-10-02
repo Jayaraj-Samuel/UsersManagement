@@ -3,21 +3,26 @@ package com.usermanagement.config;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
+import java.util.logging.Logger;
 
 public final class DatabaseConnection {
+
+    private static final Logger LOGGER = Logger.getLogger(DatabaseConnection.class.getName());
 
     private DatabaseConnection() {
         // Prevent instantiation
     }
 
     public static Connection getConnection() throws SQLException {
-
-        String password = DatabaseConfig.PASSWORD;
+        String url = DatabaseConfig.getUrl();
+        String username = DatabaseConfig.getUsername();
+        String password = DatabaseConfig.getPassword();
 
         if (password == null || password.isBlank()) {
+            LOGGER.severe("Database password is not configured! Please configure USER_DB_PASSWORD or MYSQLPASSWORD.");
             throw new SQLException(
                     "Database password is not configured. "
-                            + "Set the USER_DB_PASSWORD environment variable.");
+                            + "Please configure USER_DB_PASSWORD or MYSQLPASSWORD in your environment.");
         }
 
         try {
@@ -28,9 +33,11 @@ public final class DatabaseConnection {
                     e);
         }
 
-        return DriverManager.getConnection(
-                DatabaseConfig.URL,
-                DatabaseConfig.USERNAME,
-                password);
+        Connection conn = DriverManager.getConnection(url, username, password);
+
+        // Ensure database table and default admin are initialized
+        DatabaseInitializer.ensureInitialized(conn);
+
+        return conn;
     }
 }

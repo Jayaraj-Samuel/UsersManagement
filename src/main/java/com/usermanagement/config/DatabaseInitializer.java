@@ -21,6 +21,7 @@ import java.util.logging.Logger;
 public class DatabaseInitializer implements ServletContextListener {
 
     private static final Logger LOGGER = Logger.getLogger(DatabaseInitializer.class.getName());
+    private static volatile boolean isInitialized = false;
 
     private static final String CREATE_USERS_TABLE = """
             CREATE TABLE IF NOT EXISTS users (
@@ -42,40 +43,12 @@ public class DatabaseInitializer implements ServletContextListener {
             VALUES (?, ?, ?, ?, ?)
             """;
 
-    private Connection getConnectionWithRetry() {
-        int maxRetries = 6;
-        for (int attempt = 1; attempt <= maxRetries; attempt++) {
-            try {
-                Connection connection = DatabaseConnection.getConnection();
-                if (connection != null) {
-                    return connection;
-                }
-            } catch (Exception e) {
-                LOGGER.warning("DatabaseInitializer: Connection attempt " + attempt + " of " + maxRetries + " failed: " + e.getMessage());
-                if (attempt < maxRetries) {
-                    try {
-                        Thread.sleep(3000);
-                    } catch (InterruptedException ignored) {
-                        Thread.currentThread().interrupt();
-                        break;
-                    }
-                }
-            }
-        }
-        return null;
-    }
-
-    @Override
-    public void contextInitialized(ServletContextEvent sce) {
-        LOGGER.info("DatabaseInitializer: Checking database and running schema verification...");
-
-        Connection connection = getConnectionWithRetry();
-        if (connection == null) {
-            LOGGER.severe("DatabaseInitializer: Could not connect to database after retries. Manual schema setup might be required.");
+    public static synchronized void ensureInitialized(Connection conn) {
+        if (isInitialized || conn == null) {
             return;
         }
 
-        try (Connection conn = connection) {
+        try {
             // 1. Ensure 'users' table exists
             try (Statement stmt = conn.createStatement()) {
                 stmt.execute(CREATE_USERS_TABLE);
@@ -109,8 +82,20 @@ public class DatabaseInitializer implements ServletContextListener {
             } else {
                 LOGGER.info("DatabaseInitializer: Users already present in database. Skipping seed.");
             }
+
+            isInitialized = true;
         } catch (SQLException e) {
-            LOGGER.log(Level.SEVERE, "DatabaseInitializer: Error executing database setup SQL", e);
+            LOGGER.log(Level.WARNING, "DatabaseInitializer: Schema auto-init warning: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public void contextInitialized(ServletContextEvent sce) {
+        LOGGER.info("DatabaseInitializer: Verifying database connection on startup...");
+        try (Connection conn = DatabaseConnection.getConnection()) {
+            LOGGER.info("DatabaseInitializer: Database connection and schema verified successfully.");
+        } catch (Exception e) {
+            LOGGER.warning("DatabaseInitializer: Startup connection test failed: " + e.getMessage() + ". Will retry upon first HTTP request.");
         }
     }
 
