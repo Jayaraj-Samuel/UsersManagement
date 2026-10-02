@@ -13,7 +13,7 @@ public class UserDAO {
             SELECT id, name, email, password_hash, role, status,
                    created_at, updated_at
             FROM users
-            ORDER BY created_at DESC
+            ORDER BY id ASC
             """;
 
     private static final String SELECT_USER_BY_ID = """
