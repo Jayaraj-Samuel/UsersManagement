@@ -147,6 +147,11 @@ This project includes a multi-stage `Dockerfile` suitable for one-click deployme
 - `USER_DB_USER`: `<database_username>`
 - `USER_DB_PASSWORD`: `<database_password>`
 
+> **Automatic Schema & First Login**:
+> On initial startup, the application automatically creates the `users` table and provisions a default administrator account:
+> - **Email**: `admin@example.com`
+> - **Password**: `admin123`
+
 ### Run via Docker Locally:
 ```bash
 # Build Docker image

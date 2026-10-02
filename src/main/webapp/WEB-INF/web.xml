@@ -12,6 +12,10 @@
         <welcome-file>index.jsp</welcome-file>
     </welcome-file-list>
 
+    <listener>
+        <listener-class>com.usermanagement.config.DatabaseInitializer</listener-class>
+    </listener>
+
     <servlet>
         <servlet-name>Jersey REST Service</servlet-name>
 
