@@ -16,7 +16,7 @@
     <description>Secure Session-Based Java Web Application</description>
 
     <properties>
-        <maven.compiler.release>22</maven.compiler.release>
+        <maven.compiler.release>21</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 
@@ -90,13 +90,13 @@
 
         <plugins>
 
-            <!-- Compile with Java 22 -->
+            <!-- Compile with Java 21 (LTS) -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.14.1</version>
                 <configuration>
-                    <release>22</release>
+                    <release>21</release>
                 </configuration>
             </plugin>
 

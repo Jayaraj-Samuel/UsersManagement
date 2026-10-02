@@ -1,5 +1,5 @@
-# Multi-stage Docker build for Java 22 + Tomcat 10.1 Web Application
-FROM maven:3.9.6-eclipse-temurin-22 AS builder
+# Multi-stage Docker build for Java 21 (LTS) + Tomcat 10.1 Web Application
+FROM maven:3.9.6-eclipse-temurin-21 AS builder
 
 WORKDIR /app
 COPY pom.xml .
@@ -7,7 +7,7 @@ COPY src ./src
 
 RUN mvn clean package -DskipTests
 
-FROM tomcat:10.1-jdk22
+FROM tomcat:10.1-jdk21
 
 # Clear default webapps and deploy user-management.war as root application
 RUN rm -rf /usr/local/tomcat/webapps/*
