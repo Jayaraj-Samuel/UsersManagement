@@ -13,6 +13,9 @@ FROM tomcat:10.1-jdk21
 RUN rm -rf /usr/local/tomcat/webapps/*
 COPY --from=builder /app/target/user-management.war /usr/local/tomcat/webapps/ROOT.war
 
+# Enable IPv6 preference for Railway private networking (railway.internal)
+ENV JAVA_OPTS="-Djava.net.preferIPv6Addresses=true -Djava.net.preferIPv4Stack=false"
+
 EXPOSE 8080
 
 CMD ["catalina.sh", "run"]
