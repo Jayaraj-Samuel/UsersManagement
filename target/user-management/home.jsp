@@ -1011,6 +1011,7 @@
                                 </option>
 
                             </select>
+                            <div id="addUserRoleHelp" class="form-text text-muted d-none mt-1"></div>
 
                         </div>
 
@@ -1206,6 +1207,7 @@
                                 <option value="ADMIN">ADMIN</option>
 
                             </select>
+                            <div id="editUserRoleHelp" class="form-text text-muted d-none mt-1"></div>
 
                         </div>
 
@@ -1363,7 +1365,11 @@
 <script>
 
     const contextPath = "${pageContext.request.contextPath}";
+    const currentUserId = "${sessionScope.userId}";
+    const currentUserRole = "${not empty sessionScope.userRole ? sessionScope.userRole : 'USER'}";
+    const isCurrentAdmin = (currentUserRole.toUpperCase() === "ADMIN");
 
+    let cachedUsers = [];
     let addUserModal;
     let editUserModal;
     let deleteUserModal;
@@ -1538,6 +1544,8 @@
 
             success: function(users) {
 
+                cachedUsers = users || [];
+
                 renderUsers(users);
 
                 updateStatistics(users);
@@ -1596,6 +1604,10 @@
         }
 
 
+        const adminCount = users.filter(function(u) {
+            return u.role === "ADMIN";
+        }).length;
+
         users.forEach(function(user) {
 
             const initial =
@@ -1623,6 +1635,42 @@
 
             const escapedJsName = safeName.replace(/'/g, "\\'");
 
+            const isTargetAdmin = (user.role === "ADMIN");
+            const isLastAdmin = isTargetAdmin && (adminCount <= 1);
+            const isProtectedFromUser = isTargetAdmin && !isCurrentAdmin;
+
+            let editButtonHtml = '';
+            let deleteButtonHtml = '';
+
+            if (isProtectedFromUser) {
+                editButtonHtml =
+                    '<button class="action-btn text-secondary" disabled title="Regular users cannot edit administrator accounts" style="opacity: 0.45; cursor: not-allowed;">' +
+                        '<i class="bi bi-lock-fill"></i>' +
+                    '</button>';
+
+                deleteButtonHtml =
+                    '<button class="action-btn text-secondary" disabled title="Regular users cannot delete administrator accounts" style="opacity: 0.45; cursor: not-allowed;">' +
+                        '<i class="bi bi-shield-x"></i>' +
+                    '</button>';
+            } else {
+                editButtonHtml =
+                    '<button class="action-btn text-primary" title="Edit User" onclick="editUser(' + user.id + ')">' +
+                        '<i class="bi bi-pencil"></i>' +
+                    '</button>';
+
+                if (isLastAdmin) {
+                    deleteButtonHtml =
+                        '<button class="action-btn text-warning" disabled title="Cannot delete the last remaining administrator (System must always have at least 1 admin)" style="opacity: 0.6; cursor: not-allowed;">' +
+                            '<i class="bi bi-shield-lock-fill"></i>' +
+                        '</button>';
+                } else {
+                    deleteButtonHtml =
+                        '<button class="action-btn text-danger" title="Delete User" onclick="deleteUser(' + user.id + ', \'' + escapedJsName + '\')">' +
+                            '<i class="bi bi-trash"></i>' +
+                        '</button>';
+                }
+            }
+
             tbody.append(
                 '<tr>' +
                     '<td>' +
@@ -1638,12 +1686,8 @@
                     '<td>' + statusBadge + '</td>' +
                     '<td>' + createdDate + '</td>' +
                     '<td class="text-end">' +
-                        '<button class="action-btn text-primary" title="Edit User" onclick="editUser(' + user.id + ')">' +
-                            '<i class="bi bi-pencil"></i>' +
-                        '</button>' +
-                        '<button class="action-btn text-danger" title="Delete User" onclick="deleteUser(' + user.id + ', \'' + escapedJsName + '\')">' +
-                            '<i class="bi bi-trash"></i>' +
-                        '</button>' +
+                        editButtonHtml +
+                        deleteButtonHtml +
                     '</td>' +
                 '</tr>'
             );
@@ -1741,6 +1785,14 @@
 
     function editUser(id) {
 
+        const targetUser = cachedUsers.find(function(u) { return u.id === id; });
+
+        // Condition 2: Regular user accounts cannot edit administrator details
+        if (targetUser && targetUser.role === "ADMIN" && !isCurrentAdmin) {
+            showToast("Permission denied: Regular users cannot edit administrator accounts.", false);
+            return;
+        }
+
         $("#editUserForm")[0].reset();
         $("#editUserError").addClass("d-none").text("");
 
@@ -1756,6 +1808,24 @@
                 $("#editUserPassword").val("");
                 $("#editUserRole").val(user.role || "USER");
                 $("#editUserStatus").val(user.status || "ACTIVE");
+
+                const adminCount = cachedUsers.filter(function(u) { return u.role === "ADMIN"; }).length;
+                const isTargetLastAdmin = (user.role === "ADMIN" && adminCount <= 1);
+
+                if (!isCurrentAdmin) {
+                    // Regular user cannot change account roles
+                    $("#editUserRole").prop("disabled", true);
+                    $("#editUserRoleHelp").removeClass("d-none").text("Regular users cannot modify account roles.");
+                } else if (isTargetLastAdmin) {
+                    // Cannot demote the last remaining admin
+                    $("#editUserRole").prop("disabled", true);
+                    $("#editUserRoleHelp").removeClass("d-none").text("Cannot demote the last remaining administrator account.");
+                    $("#editUserStatus").find("option[value='INACTIVE']").prop("disabled", true);
+                } else {
+                    $("#editUserRole").prop("disabled", false);
+                    $("#editUserRoleHelp").addClass("d-none").text("");
+                    $("#editUserStatus").find("option[value='INACTIVE']").prop("disabled", false);
+                }
 
                 editUserModal.show();
             },
@@ -1781,10 +1851,21 @@
         event.preventDefault();
 
         const id = $("#editUserId").val();
+        const targetUser = cachedUsers.find(function(u) { return u.id == id; });
+
+        // Condition 2 check
+        if (targetUser && targetUser.role === "ADMIN" && !isCurrentAdmin) {
+            $("#editUserError").removeClass("d-none").text("Permission denied: Regular users cannot edit administrator accounts.");
+            return;
+        }
+
         const name = $("#editUserName").val().trim();
         const email = $("#editUserEmail").val().trim();
         const password = $("#editUserPassword").val();
-        const role = $("#editUserRole").val();
+        let role = $("#editUserRole").val();
+        if (!role && targetUser) {
+            role = targetUser.role;
+        }
         const status = $("#editUserStatus").val();
 
         $("#editUserError").addClass("d-none").text("");
@@ -1847,6 +1928,21 @@
 
     function deleteUser(id, userName) {
 
+        const targetUser = cachedUsers.find(function(u) { return u.id === id; });
+
+        // Condition 2: Regular user accounts cannot delete administrator accounts
+        if (targetUser && targetUser.role === "ADMIN" && !isCurrentAdmin) {
+            showToast("Permission denied: Regular users cannot delete administrator accounts.", false);
+            return;
+        }
+
+        // Condition 1: Check whether it's the last admin
+        const adminCount = cachedUsers.filter(function(u) { return u.role === "ADMIN"; }).length;
+        if (targetUser && targetUser.role === "ADMIN" && adminCount <= 1) {
+            showToast("Cannot delete the last remaining administrator account. There must always be at least one admin in the dashboard.", false);
+            return;
+        }
+
         $("#deleteUserId").val(id);
         $("#deleteUserNameText").text(userName);
         $("#deleteUserError").addClass("d-none").text("");
@@ -1865,6 +1961,19 @@
         const id = $("#deleteUserId").val();
 
         if (!id) return;
+
+        const targetUser = cachedUsers.find(function(u) { return u.id == id; });
+
+        if (targetUser && targetUser.role === "ADMIN" && !isCurrentAdmin) {
+            $("#deleteUserError").removeClass("d-none").text("Permission denied: Regular users cannot delete administrator accounts.");
+            return;
+        }
+
+        const adminCount = cachedUsers.filter(function(u) { return u.role === "ADMIN"; }).length;
+        if (targetUser && targetUser.role === "ADMIN" && adminCount <= 1) {
+            $("#deleteUserError").removeClass("d-none").text("Cannot delete the last remaining administrator account. There must always be at least one admin in the dashboard.");
+            return;
+        }
 
         $("#confirmDeleteBtn").prop("disabled", true);
         $("#deleteUserSpinner").removeClass("d-none");
@@ -1952,6 +2061,14 @@
 
         $("#userRole").val("USER");
 
+        if (!isCurrentAdmin) {
+            $("#userRole option[value='ADMIN']").prop("disabled", true);
+            $("#addUserRoleHelp").removeClass("d-none").text("Only administrators can create admin accounts.");
+        } else {
+            $("#userRole option[value='ADMIN']").prop("disabled", false);
+            $("#addUserRoleHelp").addClass("d-none").text("");
+        }
+
         $("#userStatus").val("ACTIVE");
 
         $("#addUserError")
@@ -1978,6 +2095,13 @@
         const status = $("#userStatus").val();
 
         $("#addUserError").addClass("d-none").text("");
+
+        if (!isCurrentAdmin && role === "ADMIN") {
+            $("#addUserError")
+                .removeClass("d-none")
+                .text("Permission denied: Regular users cannot create administrator accounts.");
+            return;
+        }
 
         if (!name || !email || !password) {
             $("#addUserError")

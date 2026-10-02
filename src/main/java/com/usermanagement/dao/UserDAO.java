@@ -60,6 +60,12 @@ public class UserDAO {
             WHERE id = ?
             """;
 
+    private static final String COUNT_ADMINS = """
+            SELECT COUNT(*)
+            FROM users
+            WHERE role = 'ADMIN'
+            """;
+
     public List<User> findAll() throws SQLException {
 
         List<User> users = new ArrayList<>();
@@ -184,6 +190,21 @@ public class UserDAO {
 
             return statement.executeUpdate() > 0;
         }
+    }
+
+    public int countAdmins() throws SQLException {
+
+        try (
+                Connection connection = DatabaseConnection.getConnection();
+                PreparedStatement statement = connection.prepareStatement(COUNT_ADMINS);
+                ResultSet resultSet = statement.executeQuery()) {
+
+            if (resultSet.next()) {
+                return resultSet.getInt(1);
+            }
+        }
+
+        return 0;
     }
 
     private User mapUser(ResultSet resultSet) throws SQLException {

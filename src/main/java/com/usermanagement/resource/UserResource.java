@@ -5,7 +5,10 @@ import com.usermanagement.model.User;
 import com.usermanagement.model.UserResponse;
 import com.usermanagement.util.PasswordUtil;
 
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpSession;
 import jakarta.ws.rs.*;
+import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 
@@ -20,8 +23,47 @@ import java.util.stream.Collectors;
 @Consumes(MediaType.APPLICATION_JSON)
 public class UserResource {
 
+    @Context
+    private HttpServletRequest httpRequest;
+
     private final UserDAO userDAO = new UserDAO();
     private static final Pattern EMAIL_PATTERN = Pattern.compile("^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$");
+
+    private User getCurrentUser() {
+        if (httpRequest == null) {
+            return null;
+        }
+        HttpSession session = httpRequest.getSession(false);
+        if (session == null) {
+            return null;
+        }
+        Long userId = (Long) session.getAttribute("userId");
+        if (userId == null) {
+            return null;
+        }
+        try {
+            return userDAO.findById(userId);
+        } catch (SQLException e) {
+            return null;
+        }
+    }
+
+    private String getCurrentUserRole() {
+        User currentUser = getCurrentUser();
+        if (currentUser != null && currentUser.getRole() != null) {
+            return currentUser.getRole();
+        }
+        if (httpRequest != null) {
+            HttpSession session = httpRequest.getSession(false);
+            if (session != null) {
+                Object role = session.getAttribute("userRole");
+                if (role != null) {
+                    return role.toString();
+                }
+            }
+        }
+        return null;
+    }
 
     @GET
     public Response getAllUsers() {
@@ -129,6 +171,15 @@ public class UserResource {
                         .build();
             }
 
+            String callerRole = getCurrentUserRole();
+            boolean isCallerAdmin = "ADMIN".equalsIgnoreCase(callerRole);
+
+            if (!isCallerAdmin && "ADMIN".equalsIgnoreCase(user.getRole())) {
+                return Response.status(Response.Status.FORBIDDEN)
+                        .entity(Map.of("message", "Permission denied: Regular users cannot create administrator accounts."))
+                        .build();
+            }
+
             /*
              * Normalize basic fields
              */
@@ -213,6 +264,40 @@ public class UserResource {
                         Response.Status.NOT_FOUND)
                         .entity(Map.of("message", "User not found"))
                         .build();
+            }
+
+            String callerRole = getCurrentUserRole();
+            boolean isCallerAdmin = "ADMIN".equalsIgnoreCase(callerRole);
+
+            // Condition 2: Regular user accounts cannot edit administrator details
+            if ("ADMIN".equalsIgnoreCase(existingUser.getRole()) && !isCallerAdmin) {
+                return Response.status(Response.Status.FORBIDDEN)
+                        .entity(Map.of("message", "Permission denied: Regular users are not permitted to edit administrator accounts."))
+                        .build();
+            }
+
+            // Regular users cannot elevate any account to ADMIN
+            if (!isCallerAdmin && user.getRole() != null && "ADMIN".equalsIgnoreCase(user.getRole()) && !"ADMIN".equalsIgnoreCase(existingUser.getRole())) {
+                return Response.status(Response.Status.FORBIDDEN)
+                        .entity(Map.of("message", "Permission denied: Only administrators can assign the ADMIN role."))
+                        .build();
+            }
+
+            // Condition 1: There must always be at least one admin account in the dashboard
+            if ("ADMIN".equalsIgnoreCase(existingUser.getRole())) {
+                boolean demotingRole = user.getRole() != null && !"ADMIN".equalsIgnoreCase(user.getRole());
+                boolean deactivating = user.getStatus() != null && !"ACTIVE".equalsIgnoreCase(user.getStatus());
+
+                if (demotingRole || deactivating) {
+                    int adminCount = userDAO.countAdmins();
+                    if (adminCount <= 1) {
+                        return Response.status(Response.Status.BAD_REQUEST)
+                                .entity(Map.of("message", demotingRole
+                                        ? "Cannot demote the last remaining administrator account. There must always be at least one admin in the dashboard."
+                                        : "Cannot deactivate the last remaining administrator account. There must always be at least one active admin in the dashboard."))
+                                .build();
+                    }
+                }
             }
 
             if (user == null ||
@@ -317,6 +402,26 @@ public class UserResource {
                         Response.Status.NOT_FOUND)
                         .entity(Map.of("message", "User not found"))
                         .build();
+            }
+
+            String callerRole = getCurrentUserRole();
+            boolean isCallerAdmin = "ADMIN".equalsIgnoreCase(callerRole);
+
+            // Condition 2: Regular user accounts cannot delete administrator accounts
+            if ("ADMIN".equalsIgnoreCase(existingUser.getRole()) && !isCallerAdmin) {
+                return Response.status(Response.Status.FORBIDDEN)
+                        .entity(Map.of("message", "Permission denied: Regular users are not permitted to delete administrator accounts."))
+                        .build();
+            }
+
+            // Condition 1: Check whether it's the last admin. If yes, it cannot be deleted
+            if ("ADMIN".equalsIgnoreCase(existingUser.getRole())) {
+                int adminCount = userDAO.countAdmins();
+                if (adminCount <= 1) {
+                    return Response.status(Response.Status.BAD_REQUEST)
+                            .entity(Map.of("message", "Cannot delete the last remaining administrator account. There must always be at least one admin in the dashboard."))
+                            .build();
+                }
             }
 
             boolean deleted = userDAO.delete(id);
